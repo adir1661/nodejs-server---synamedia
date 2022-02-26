@@ -54,6 +54,4 @@ const createNode = async (request, response) => {
 module.exports = {
   getNodes,
   createNode,
-  // updateUser,
-  // deleteUser,
 }

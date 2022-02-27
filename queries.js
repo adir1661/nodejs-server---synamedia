@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 const { Node } = require('./models/nodes');
+const { Relation } = require('./models/relations');
 const { ObjectId } = mongoose.Types;
 
 const { DATABASE_USERNAME, MONGO_DOMAIN, DATABASE_NAME, DATABASE_PASSWORD, } = process.env
@@ -16,7 +17,24 @@ const getNodes = async (request, response) => {
     const { parent } = request.query;
     let results;
     if (parent) {
-      results = await Node.find({ parent: ObjectId(parent) })
+      const aggregation = await Relation.aggregate([
+        { $match: { parent: ObjectId(parent) } },
+        {
+          $lookup: {
+            from: 'nodes',
+            localField: 'child',
+            foreignField: '_id',
+            as: 'children'
+          }
+        },
+        {
+          $replaceRoot: {
+            newRoot: { $arrayElemAt: ['$children', 0] }
+          }
+        }
+      ]);
+      console.log({ aggregation })
+      results = aggregation.map(child => ({ ...child, parent }));
     } else {
       results = await Node.find({ parent: null });
     }
@@ -43,7 +61,15 @@ const createNode = async (request, response) => {
       parent: parentId ? ObjectId(parentId) : null
     });
     const savedNode = await node.save();
-    return response.status(201).send({ message: `Node added with ID: ${savedNode._id}`, data: savedNode })
+    const responseBody = { message: `Node added with ID: ${savedNode._id}`, data: savedNode }
+    if (parentId) {
+      const relation = new Relation({
+        child: savedNode._id,
+        parent: ObjectId(parentId),
+      })
+      responseBody.relation = await relation.save();
+    };
+    return response.status(201).send(responseBody);
   } catch (error) {
     console.error(error)
     response.status(502).send(`there was error on the server`);
